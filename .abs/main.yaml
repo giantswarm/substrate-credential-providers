@@ -1,0 +1,5 @@
+replace-chart-version-with-git: true
+generate-metadata: true
+chart-dir: ./helm/substrate-credential-providers
+destination: ./build
+helm-template-extra-values: ./helm/substrate-credential-providers/ci/ci-values.yaml
