@@ -33,7 +33,9 @@ spec:
 ---
 # The same ingress for Cilium, and the egress the provider needs: DNS, the
 # kube-apiserver for the Secret read, and Google's token endpoint for the
-# exchange. Nothing else leaves the pod.
+# exchange. Nothing else leaves the pod. The DNS rule sends lookups through
+# Cilium's DNS proxy, without which the toFQDNs rule learns no addresses and
+# matches nothing.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -78,6 +80,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     - toEntities:
         - kube-apiserver
     - toFQDNs:

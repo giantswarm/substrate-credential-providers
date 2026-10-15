@@ -40,5 +40,5 @@ podman build -f google-access-token/Dockerfile --build-arg TARGETOS=linux --buil
 
 A new provider is a sibling directory with its own `go.mod` (added to
 `go.work`), a `Dockerfile` built from the repository root, a chart under
-`helm/<name>-credential-provider` and, in `.circleci/custom.yml`, its image and
-chart jobs beside the generated ones.
+`helm/<name>-credential-provider` and, in `.circleci/workflows.yml`, its image
+and chart jobs beside the existing ones.

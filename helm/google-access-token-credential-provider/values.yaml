@@ -66,12 +66,6 @@ exchangeTimeout: 15s  # @schema pattern:^[0-9]+(ms|s|m)$
 podCertificates:
   maxExpirationSeconds: null  # @schema type:[integer, null]; minimum:3600; maximum:7862400
 
-# An HTTPS proxy the token exchange goes through, when the cluster's egress
-# requires one. Rendered as HTTPS_PROXY and NO_PROXY on the container.
-proxy:
-  httpsProxy: ""
-  noProxy: ""
-
 # Network policies. The Kubernetes NetworkPolicy admits the egress gateway on
 # the gRPC port. The Cilium policy does the same and opens egress to DNS, the
 # kube-apiserver and Google's token endpoint on 443; it is what a Giant Swarm

@@ -70,8 +70,6 @@ A cluster whose DNS pods carry other labels than the ones under
 | namespacePolicies | list | `[]` |  |
 | exchangeTimeout | string | `"15s"` |  |
 | podCertificates.maxExpirationSeconds | string | `nil` |  |
-| proxy.httpsProxy | string | `""` |  |
-| proxy.noProxy | string | `""` |  |
 | networkPolicy.enabled | bool | `true` |  |
 | networkPolicy.cilium.enabled | bool | `true` |  |
 | networkPolicy.cilium.tokenHosts[0] | string | `"oauth2.googleapis.com"` |  |

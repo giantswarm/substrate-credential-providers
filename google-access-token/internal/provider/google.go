@@ -44,12 +44,6 @@ import (
 )
 
 const (
-	// GoogleAccessTokenProviderName is the ate-secret:// URI host that resolves a
-	// Secret entry holding a Google service account key to an access token for
-	// that service account. The path is <namespace>/<secret>[/<key>], as for
-	// ProviderName.
-	GoogleAccessTokenProviderName = "google-access-token.k8s.io"
-
 	// googleCloudPlatformScope is the scope of every minted token. It is the one
 	// Vertex AI accepts, so the service account's IAM roles decide what the
 	// token may do.
@@ -73,31 +67,33 @@ const (
 // googleTokenExchanger mints Google access tokens from service account keys
 // and caches each token, keyed by the key's contents, until it nears expiry.
 type googleTokenExchanger struct {
-	// fetch performs the JWT bearer grant for a key. It is the one call that
-	// leaves the process, so tests replace it.
-	fetch func(ctx context.Context, conf *jwt.Config) (*oauth2.Token, error)
-	// timeout bounds one fetch.
+	// client reaches the token endpoints.
+	client *http.Client
+	// timeout bounds one exchange.
 	timeout time.Duration
 
 	mu     sync.Mutex
 	tokens map[[sha256.Size]byte]*googleToken
 }
 
-// googleToken is one cached access token. Its lock serializes exchanges for a
-// key, so actors starting together share one round trip to Google.
+// googleToken is one cached access token. Holding turn serializes exchanges
+// for a key, so actors starting together share one round trip to Google.
 type googleToken struct {
-	mu     sync.Mutex
+	// turn is full while a caller owns the entry; value and expiry are
+	// read and written only by that owner.
+	turn   chan struct{}
 	value  string
 	expiry time.Time
+	// users counts the callers that hold or wait for turn. It is guarded by
+	// the exchanger's mu; an entry is dropped only when it has none.
+	users int
 }
 
 // newGoogleTokenExchanger builds an exchanger that reaches token endpoints
 // through client, giving each exchange at most timeout.
 func newGoogleTokenExchanger(client *http.Client, timeout time.Duration) *googleTokenExchanger {
 	return &googleTokenExchanger{
-		fetch: func(ctx context.Context, conf *jwt.Config) (*oauth2.Token, error) {
-			return conf.TokenSource(context.WithValue(ctx, oauth2.HTTPClient, client)).Token()
-		},
+		client:  client,
 		timeout: timeout,
 		tokens:  map[[sha256.Size]byte]*googleToken{},
 	}
@@ -112,9 +108,11 @@ func (g *googleTokenExchanger) AccessToken(ctx context.Context, key []byte) (str
 	if err != nil {
 		return "", status.Error(codes.FailedPrecondition, err.Error())
 	}
-	entry := g.entry(sha256.Sum256(key))
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
+	entry, err := g.acquire(ctx, sha256.Sum256(key))
+	if err != nil {
+		return "", err
+	}
+	defer g.release(entry)
 	if entry.value != "" && time.Until(entry.expiry) >= googleTokenMinRemaining {
 		return entry.value, nil
 	}
@@ -126,29 +124,42 @@ func (g *googleTokenExchanger) AccessToken(ctx context.Context, key []byte) (str
 	return entry.value, nil
 }
 
-// entry returns the cache slot for a key. Expired entries are dropped on the
-// way so rotated keys do not accumulate; TryLock skips one another goroutine
-// is refreshing, since deleting it would let a third start a duplicate
-// exchange.
-func (g *googleTokenExchanger) entry(sum [sha256.Size]byte) *googleToken {
+// acquire returns the cache slot for a key once the caller owns it, or the
+// caller's context error if it ends first. Unused entries without a live token
+// are dropped on the way, so rotated and rejected keys do not accumulate.
+func (g *googleTokenExchanger) acquire(ctx context.Context, sum [sha256.Size]byte) (*googleToken, error) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	now := time.Now()
 	for k, t := range g.tokens {
-		if k == sum || !t.mu.TryLock() {
-			continue
-		}
-		if t.value != "" && !t.expiry.After(now) {
+		if t.users == 0 && !t.expiry.After(now) {
 			delete(g.tokens, k)
 		}
-		t.mu.Unlock()
 	}
 	t, ok := g.tokens[sum]
 	if !ok {
-		t = &googleToken{}
+		t = &googleToken{turn: make(chan struct{}, 1)}
 		g.tokens[sum] = t
 	}
-	return t
+	t.users++
+	g.mu.Unlock()
+
+	select {
+	case t.turn <- struct{}{}:
+		return t, nil
+	case <-ctx.Done():
+		g.mu.Lock()
+		t.users--
+		g.mu.Unlock()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+// release hands the entry to the next waiting caller.
+func (g *googleTokenExchanger) release(t *googleToken) {
+	<-t.turn
+	g.mu.Lock()
+	t.users--
+	g.mu.Unlock()
 }
 
 // exchange performs the JWT bearer grant. A 4xx from the endpoint means the
@@ -156,7 +167,7 @@ func (g *googleTokenExchanger) entry(sum [sha256.Size]byte) *googleToken {
 func (g *googleTokenExchanger) exchange(ctx context.Context, conf *jwt.Config) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
-	token, err := g.fetch(ctx, conf)
+	token, err := conf.TokenSource(context.WithValue(ctx, oauth2.HTTPClient, g.client)).Token()
 	if err != nil {
 		var rejected *oauth2.RetrieveError
 		if errors.As(err, &rejected) && rejected.Response != nil && rejected.Response.StatusCode >= 400 && rejected.Response.StatusCode < 500 {

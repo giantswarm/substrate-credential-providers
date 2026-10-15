@@ -46,6 +46,11 @@ tests:
         lengthEqual:
           path: spec.egress[0].toEndpoints
           count: 3
+      - documentIndex: 1
+        equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*"
 
   - it: takes a further token endpoint and another Substrate release
     set:

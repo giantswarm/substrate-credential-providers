@@ -26,6 +26,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,8 +37,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/jwt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -215,13 +214,13 @@ func TestFetchSecretGoogleAccessToken(t *testing.T) {
 
 // The cache serves a token while fifteen minutes remain and exchanges the key
 // again before that, so the gateway's five-minute cache never holds an expired
-// token. The clock is synctest's; the exchange is faked, so nothing leaves the
-// bubble.
+// token. The clock is synctest's; the token endpoint answers in-process, so
+// nothing leaves the bubble.
 func TestGoogleAccessTokenRefreshesBeforeGatewayCacheOutlivesIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		key := generateRSAKey(t)
 		raw := serviceAccountKeyJSON(t, key, googleTestEmail, "https://oauth2.example.test/token")
-		srv, _ := newGoogleTestServerWithFetch(t, vertexSecret(raw), 3600)
+		srv, _ := newGoogleTestServerWithTransport(t, vertexSecret(raw), 3600)
 
 		first, err := fetchGoogleToken(t, srv, googleTestURI)
 		require.NoError(t, err)
@@ -245,7 +244,7 @@ func TestGoogleAccessTokenDropsExpiredEntries(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		key := generateRSAKey(t)
 		secret := vertexSecret(serviceAccountKeyJSON(t, key, googleTestEmail, "https://oauth2.example.test/token"))
-		srv, client := newGoogleTestServerWithFetch(t, secret, 3600)
+		srv, client := newGoogleTestServerWithTransport(t, secret, 3600)
 
 		_, err := fetchGoogleToken(t, srv, googleTestURI)
 		require.NoError(t, err)
@@ -265,21 +264,56 @@ func TestGoogleAccessTokenDropsExpiredEntries(t *testing.T) {
 	})
 }
 
-// newGoogleTestServerWithFetch replaces the HTTP exchange with a fake that
-// issues numbered tokens living expiresIn seconds, for tests inside a synctest
-// bubble.
-func newGoogleTestServerWithFetch(t *testing.T, secret *corev1.Secret, expiresIn float64) (*Server, *fake.Clientset) {
+// roundTripFunc is an http.RoundTripper over a function.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// newGoogleTestServerWithTransport points the exchanger at a token endpoint
+// answered in-process: numbered tokens living expiresIn seconds, for tests
+// inside a synctest bubble, where nothing may leave the process.
+func newGoogleTestServerWithTransport(t *testing.T, secret *corev1.Secret, expiresIn int) (*Server, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(secret)
 	srv := NewServer(client, &NamespaceAuthorizer{allowed: map[string]map[string][]grant{"team-a": {"ns1": {{}}}}}, DefaultExchangeTimeout)
 	var hits int
-	srv.google.fetch = func(_ context.Context, conf *jwt.Config) (*oauth2.Token, error) {
-		require.Equal(t, googleCloudPlatformScope, strings.Join(conf.Scopes, " "))
+	srv.google = newGoogleTokenExchanger(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := r.ParseForm(); err != nil {
+			return nil, err
+		}
+		claims, err := unverifiedClaims(r.PostForm.Get("assertion"))
+		if err != nil {
+			return nil, err
+		}
+		require.Equal(t, googleCloudPlatformScope, claims.Scope)
 		hits++
-		token := &oauth2.Token{AccessToken: fmt.Sprintf("ya29.token-%d", hits), TokenType: "Bearer"}
-		return token.WithExtra(map[string]any{"expires_in": expiresIn}), nil
-	}
+		body := fmt.Sprintf(`{"access_token":"ya29.token-%d","token_type":"Bearer","expires_in":%d}`, hits, expiresIn)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    r,
+		}, nil
+	})}, DefaultExchangeTimeout)
 	return srv, client
+}
+
+// unverifiedClaims decodes an assertion's claims without checking its
+// signature, which the TLS endpoint tests cover.
+func unverifiedClaims(assertion string) (*assertionClaims, error) {
+	parts := strings.Split(assertion, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("malformed assertion")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	var claims assertionClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, err
+	}
+	return &claims, nil
 }
 
 func TestGoogleAccessTokenSerializesConcurrentFetches(t *testing.T) {
@@ -445,4 +479,57 @@ func TestGoogleAccessTokenDeniedBeforeAnyLookup(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "FetchSecret error = %v", err)
 	require.Empty(t, client.Actions(), "denied request reached Kubernetes")
 	require.Zero(t, endpoint.hits.Load(), "denied request reached the token endpoint")
+}
+
+// A caller waiting behind another's exchange of the same key gives up when its
+// own context ends, instead of queueing past the gateway's deadline.
+func TestGoogleAccessTokenWaiterHonorsItsContext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		key := generateRSAKey(t)
+		secret := vertexSecret(serviceAccountKeyJSON(t, key, googleTestEmail, "https://oauth2.example.test/token"))
+		srv, _ := newGoogleTestServerWithTransport(t, secret, 3600)
+		release := make(chan struct{})
+		transport := srv.google.client.Transport
+		srv.google.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return nil, r.Context().Err()
+			}
+			return transport.RoundTrip(r)
+		})
+
+		first := make(chan error, 1)
+		go func() {
+			_, err := fetchGoogleToken(t, srv, googleTestURI)
+			first <- err
+		}()
+		synctest.Wait()
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, err := srv.FetchSecret(ctx, &credproviderpb.FetchSecretRequest{Uri: googleTestURI, ActorSpiffeId: googleTestActor})
+		require.Equal(t, codes.DeadlineExceeded, status.Code(err), "FetchSecret error = %v", err)
+
+		close(release)
+		require.NoError(t, <-first)
+	})
+}
+
+// A key Google rejects leaves no cache entry behind once another fetch runs.
+func TestGoogleAccessTokenDropsEntriesOfRejectedKeys(t *testing.T) {
+	key := generateRSAKey(t)
+	endpoint := newFakeTokenEndpoint(t, &key.PublicKey)
+	secret := vertexSecret(serviceAccountKeyJSON(t, generateRSAKey(t), googleTestEmail, endpoint.URL))
+	srv, client := newGoogleTestServer(endpoint, secret)
+
+	_, err := fetchGoogleToken(t, srv, googleTestURI)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "FetchSecret error = %v", err)
+
+	secret.Data["credentials.json"] = serviceAccountKeyJSON(t, key, googleTestEmail, endpoint.URL)
+	_, err = client.CoreV1().Secrets("ns1").Update(t.Context(), secret, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = fetchGoogleToken(t, srv, googleTestURI)
+	require.NoError(t, err)
+	require.Len(t, srv.google.tokens, 1, "the rejected key's entry is dropped")
 }

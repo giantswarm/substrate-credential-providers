@@ -68,22 +68,6 @@ tests:
           path: spec.template.metadata.annotations["checksum/namespace-policy"]
           pattern: ^[0-9a-f]{64}$
 
-  - it: renders the proxy as the container environment
-    set:
-      proxy.httpsProxy: http://proxy.example:3128
-      proxy.noProxy: .svc,.cluster.local
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: HTTPS_PROXY
-            value: http://proxy.example:3128
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: NO_PROXY
-            value: .svc,.cluster.local
-
   - it: runs under the restricted pod security standard by default
     asserts:
       - equal:

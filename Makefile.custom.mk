@@ -18,7 +18,7 @@ test-providers: ## go test in every provider module.
 
 .PHONY: lint-providers
 lint-providers: ## golangci-lint and govulncheck in every provider module.
-	@for p in $(PROVIDERS); do (cd $$p && golangci-lint run ./... && go run golang.org/x/vuln/cmd/govulncheck@latest ./...) || exit 1; done
+	@for p in $(PROVIDERS); do (cd $$p && golangci-lint run ./... && go tool govulncheck ./...) || exit 1; done
 
 .PHONY: build-providers
 build-providers: ## Build every provider's image from the repository root.

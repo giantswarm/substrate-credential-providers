@@ -129,6 +129,3 @@ func (s *Server) authorize(ctx context.Context, actorSpiffeID, namespace string)
 	}
 	return atespace, nil
 }
-
-// Grants exposes the enforced atespace-to-namespace policy.
-func (s *Server) Grants() map[string][]string { return s.nsAuth.Grants() }

@@ -17,7 +17,6 @@ package provider
 import (
 	"fmt"
 	"os"
-	"sort"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -132,23 +131,6 @@ func newNamespaceAuthorizer(file namespacePolicyFile) (*NamespaceAuthorizer, err
 		}
 	}
 	return &NamespaceAuthorizer{allowed: allowed}, nil
-}
-
-// Grants returns the loaded policy as atespace → sorted namespaces
-func (a *NamespaceAuthorizer) Grants() map[string][]string {
-	if a == nil {
-		return nil
-	}
-	out := make(map[string][]string, len(a.allowed))
-	for atespace, namespaces := range a.allowed {
-		list := make([]string, 0, len(namespaces))
-		for ns := range namespaces {
-			list = append(list, ns)
-		}
-		sort.Strings(list)
-		out[atespace] = list
-	}
-	return out
 }
 
 // Allowed reports whether atespace may resolve secrets in namespace. Default

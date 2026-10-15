@@ -60,7 +60,7 @@ repos:
           - --max-same-issues=0
           - --max-issues-per-linter=0
       - id: go-imports
-        args: [ -local, substrate-credential-providers ]
+        args: [ -local, github.com/giantswarm/substrate-credential-providers ]
 
   # Renovate's gomod manager reads a require line's trailing comment as one
   # word (`// indirect`); a line whose comment has more words is skipped

@@ -52,8 +52,8 @@ provider reads the Secret, signs the key's JWT assertion and exchanges it at
 the key's `token_uri` (`https://oauth2.googleapis.com/token` for keys Google
 issues) for a token scoped to `https://www.googleapis.com/auth/cloud-platform`.
 The service account's IAM roles decide what the token may do. The `token_uri`
-has to be an HTTPS URL, and the pod has to be able to reach it; the provider
-honors `HTTPS_PROXY` in its environment.
+has to be an HTTPS URL on a host the chart's `networkPolicy.cilium.tokenHosts`
+lists.
 
 Tokens live one hour. The provider caches each token per key and hands it out
 while at least fifteen minutes remain, which keeps the egress gateway's

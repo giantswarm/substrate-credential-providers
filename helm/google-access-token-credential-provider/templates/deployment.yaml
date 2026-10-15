@@ -43,17 +43,6 @@ spec:
             - --namespace-policy-file=/etc/google-access-token-credential-provider/namespace-policy.yaml
             - --exchange-timeout={{ .Values.exchangeTimeout }}
             - --log-level={{ .Values.logLevel }}
-          {{- if or .Values.proxy.httpsProxy .Values.proxy.noProxy }}
-          env:
-            {{- with .Values.proxy.httpsProxy }}
-            - name: HTTPS_PROXY
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.proxy.noProxy }}
-            - name: NO_PROXY
-              value: {{ . | quote }}
-            {{- end }}
-          {{- end }}
           ports:
             - name: grpc
               containerPort: 50051

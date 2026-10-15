@@ -43,7 +43,6 @@ func TestNamespaceAuthorizer(t *testing.T) {
 	} {
 		require.Equal(t, tc.want, authz.Allowed(tc.atespace, tc.namespace), "Allowed(%q, %q)", tc.atespace, tc.namespace)
 	}
-	require.Equal(t, map[string][]string{"team-a": {"ns1", "shared"}, "team-b": {"ns2"}}, authz.Grants())
 
 	empty, err := newNamespaceAuthorizer(namespacePolicyFile{})
 	require.NoError(t, err)
@@ -51,7 +50,6 @@ func TestNamespaceAuthorizer(t *testing.T) {
 
 	var nilAuthz *NamespaceAuthorizer
 	require.False(t, nilAuthz.Allowed("team-a", "ns1"), "a nil authorizer denies everything")
-	require.Nil(t, nilAuthz.Grants())
 
 	_, err = newNamespaceAuthorizer(namespacePolicyFile{
 		Policies: []atespaceNamespacePolicy{{AllowedNamespaces: []string{"ns1"}}},
