@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/agent-substrate/substrate v1.11.4
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/oauth2 v0.37.0
 	google.golang.org/grpc v1.84.0
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
