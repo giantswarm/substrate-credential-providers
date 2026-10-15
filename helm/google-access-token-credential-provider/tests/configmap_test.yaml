@@ -1,0 +1,24 @@
+suite: grants
+templates:
+  - configmap.yaml
+tests:
+  - it: denies everything by default
+    asserts:
+      - equal:
+          path: data["namespace-policy.yaml"]
+          value: |
+            policies: []
+
+  - it: writes the grants in the provider's policy shape
+    set:
+      namespacePolicies:
+        - atespace: kagent
+          allowedNamespaces: [kagent]
+          secretSelector:
+            matchLabels:
+              example.com/credential: "true"
+    asserts:
+      - equal:
+          path: data["namespace-policy.yaml"]
+          value: |
+            policies: [{"allowedNamespaces":["kagent"],"atespace":"kagent","secretSelector":{"matchLabels":{"example.com/credential":"true"}}}]

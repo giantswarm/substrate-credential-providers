@@ -1,0 +1,18 @@
+version: "2"
+
+linters:
+  exclusions:
+    rules:
+      # goconst flags repeated string literals; tests naturally repeat
+      # strings (namespaces, atespaces, keys) and should not be forced to
+      # hoist them to constants.
+      - path: _test\.go
+        linters:
+          - goconst
+      # G304 flags a file read from a variable path. These paths are the
+      # provider's own flags (the credential bundle, the trust bundle, the
+      # policy file), set by the Deployment, never by a caller.
+      - path: internal/(credbundle|provider)/
+        linters:
+          - gosec
+        text: G304

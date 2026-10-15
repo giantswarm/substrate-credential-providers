@@ -1,0 +1,138 @@
+# Default values for google-access-token-credential-provider.
+
+# Umbrella-chart key. The agent-platform app-of-apps forwards its values block
+# verbatim, including this control key; the chart ignores it.
+enabled: true
+
+name: google-access-token-credential-provider
+serviceType: managed
+
+# Override the resource name for every Kubernetes object. The Service name is
+# the address the egress gateway dials and the name the serving certificate
+# carries, so a Substrate chart's credentialProvider.additionalProviders entry
+# names <this>.<namespace>.svc:50051.
+fullnameOverride: ""
+
+image:
+  registry: gsoci.azurecr.io
+  name: giantswarm/substrate-credential-providers/google-access-token
+  # Empty: the chart's appVersion, which the release pipeline sets to the tag.
+  tag: ""
+  # The image index digest the release pipeline stamps here, so the chart pins
+  # the image it was released with. Empty renders the tag alone.
+  digest: ""  # @schema pattern:^(sha256:[0-9a-f]{64})?$
+  pullPolicy: IfNotPresent  # @schema enum:[Always, IfNotPresent, Never]
+
+replicaCount: 1  # @schema minimum:0
+
+# Log level: debug, info, warn, error.
+logLevel: info  # @schema enum:[debug, info, warn, error]
+
+# The Substrate installation whose egress gateway calls this provider. The
+# gateway's pod identity is pinned on every connection; nothing else may call.
+substrate:
+  # The release name the Substrate chart was installed under. Its objects are
+  # named without a prefix for the release name "substrate".
+  releaseName: substrate
+  # The namespace the Substrate control plane runs in.
+  namespace: ate-system
+  # The SPIFFE trust domain the pod-identity signer issues under.
+  trustDomain: cluster.local
+  # The name of the egress gateway's ServiceAccount and the value of the app
+  # label its pods carry; the chart prefixes the release name as the Substrate
+  # chart does.
+  egressGateway: atenet-egress
+
+# Which Kubernetes namespaces each atespace may resolve service account keys
+# from, in the shape of the Substrate chart's credentialProvider
+# .namespacePolicies. Default deny: an atespace that is not listed resolves
+# nothing. secretSelector narrows a grant to Secrets carrying every listed
+# label. A change rolls the pod.
+namespacePolicies: []
+#  - atespace: kagent
+#    allowedNamespaces: [kagent]
+#    secretSelector:
+#      matchLabels:
+#        example.com/credential: "true"
+
+# How long one exchange of a service account key at Google's token endpoint may
+# take. The egress gateway waits on the fetch, so keep it short.
+exchangeTimeout: 15s  # @schema pattern:^[0-9]+(ms|s|m)$
+
+# Pod certificates: kubelet requests the serving certificate and the client
+# trust bundle through podCertificate projected volumes, and Substrate's
+# signers issue them. maxExpirationSeconds caps the lifetime kubelet asks for
+# (kubelet accepts 3600 to 7862400); unset keeps kubelet's default of 86400.
+podCertificates:
+  maxExpirationSeconds: null  # @schema type:[integer, null]; minimum:3600; maximum:7862400
+
+# An HTTPS proxy the token exchange goes through, when the cluster's egress
+# requires one. Rendered as HTTPS_PROXY and NO_PROXY on the container.
+proxy:
+  httpsProxy: ""
+  noProxy: ""
+
+# Network policies. The Kubernetes NetworkPolicy admits the egress gateway on
+# the gRPC port. The Cilium policy does the same and opens egress to DNS, the
+# kube-apiserver and Google's token endpoint on 443; it is what a Giant Swarm
+# cluster enforces.
+networkPolicy:
+  enabled: true
+  cilium:
+    enabled: true
+    # The token endpoints the provider may reach. kagent's compilers accept a
+    # service account key only when its token_uri is on the first one; add a
+    # name for a key whose token_uri Google issues elsewhere.
+    tokenHosts:  # @schema minItems:1
+      - oauth2.googleapis.com
+    # The DNS endpoints the pod may resolve through, as the agent-platform
+    # connectivity chart's policies name them.
+    dns:
+      - namespace: kube-system
+        labels:
+          k8s-app: kube-dns
+      - namespace: kube-system
+        labels:
+          k8s-app: coredns
+      - namespace: kube-system
+        labels:
+          k8s-app: k8s-dns-node-cache
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+serviceAccount:
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+terminationGracePeriodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true  # @schema const:true
+  runAsUser: 65532  # @schema minimum:1
+  runAsGroup: 65532  # @schema minimum:1
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false  # @schema const:false
+  privileged: false  # @schema const:false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true  # @schema const:true
+  runAsUser: 65532  # @schema minimum:1
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault

@@ -60,7 +60,7 @@ repos:
           - --max-same-issues=0
           - --max-issues-per-linter=0
       - id: go-imports
-        args: [ -local, github.com/giantswarm/substrate-credential-providers ]
+        args: [ -local, substrate-credential-providers ]
 
   # Renovate's gomod manager reads a require line's trailing comment as one
   # word (`// indirect`); a line whose comment has more words is skipped
@@ -74,9 +74,9 @@ repos:
         files: (^|/)go\.mod$
         entry: '^\s*(require\s+)?[A-Za-z0-9][^\s,]*[./][^\s,]*\s+v[0-9]\S*\s*//\s*\S+\s+\S'
 
-  # Helm chart schema for substrate-credential-providers: verify helm/substrate-credential-providers/values.schema.json is up to date.
+  # Helm chart schema for google-access-token-credential-provider: verify helm/google-access-token-credential-provider/values.schema.json is up to date.
   #
-  # `devctl gen precommit` now generates and writes helm/substrate-credential-providers/values.schema.json itself
+  # `devctl gen precommit` now generates and writes helm/google-access-token-credential-provider/values.schema.json itself
   # (running the same generate -> fix $ref -> normalize pipeline in-process, see
   # giantswarm/devctl#2195), so this hook is READ-ONLY: it reproduces that pipeline to a
   # scratch file and diffs it against the committed one, but never writes the committed
@@ -125,11 +125,11 @@ repos:
   # lines from hello-world-app's) and CI then rejected it.
   - repo: local
     hooks:
-      - id: helm-schema-substrate-credential-providers
-        name: "verify helm/substrate-credential-providers/values.schema.json is up to date"
+      - id: helm-schema-google-access-token-credential-provider
+        name: "verify helm/google-access-token-credential-provider/values.schema.json is up to date"
         language: golang
         additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.0']
-        files: ^helm/substrate-credential-providers/(values\.yaml|\.schema\.yaml|values\.schema\.json|zz_generated\.app-platform\.values\.yaml)$
+        files: ^helm/google-access-token-credential-provider/(values\.yaml|\.schema\.yaml|values\.schema\.json|zz_generated\.app-platform\.values\.yaml)$
         pass_filenames: false
         require_serial: true
         entry: sh -c
@@ -138,11 +138,11 @@ repos:
             set -e
             tmp=$(mktemp)
             trap 'rm -f "$tmp"' EXIT
-            helm-values-schema-json --config helm/substrate-credential-providers/.schema.yaml -o "$tmp"
+            helm-values-schema-json --config helm/google-access-token-credential-provider/.schema.yaml -o "$tmp"
             python3 -c 'import json,sys; h=lambda o: {**{k:v for k,v in o.items() if k!="additionalProperties"},"unevaluatedProperties":False} if ("$ref" in o and o.get("additionalProperties") is False) else o; p=sys.argv[1]; f=open(p,encoding="utf-8"); d=json.load(f,object_hook=h); f.close(); f=open(p,"w",encoding="utf-8"); json.dump(d,f); f.close()' "$tmp"
             schemalint normalize "$tmp" -o "$tmp" --force
-            if ! diff -u helm/substrate-credential-providers/values.schema.json "$tmp"; then
-              echo "helm/substrate-credential-providers/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
+            if ! diff -u helm/google-access-token-credential-provider/values.schema.json "$tmp"; then
+              echo "helm/google-access-token-credential-provider/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
               exit 1
             fi
   - repo: https://github.com/giantswarm/schemalint
@@ -151,7 +151,7 @@ repos:
       - id: schemalint-verify
         pass_filenames: false
         args:
-          - helm/substrate-credential-providers/values.schema.json
+          - helm/google-access-token-credential-provider/values.schema.json
   # helm-docs finds every chart below helm/, the vendored subcharts under
   # helm/<chart>/charts/ included; --chart-to-generate limits the README it
   # writes to the repo's own charts, so the vendored subtree stays untouched
@@ -162,5 +162,5 @@ repos:
       - id: helm-docs
         args:
           - --chart-search-root=helm
-          - --chart-to-generate=helm/substrate-credential-providers
+          - --chart-to-generate=helm/google-access-token-credential-provider
           - --sort-values-order=file
