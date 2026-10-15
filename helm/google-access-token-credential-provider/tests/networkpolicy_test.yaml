@@ -1,0 +1,77 @@
+suite: network policies
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: admits the egress gateway on the gRPC port and opens the token endpoint on 443
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        equal:
+          path: kind
+          value: NetworkPolicy
+      - documentIndex: 0
+        equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels.app
+          value: atenet-egress
+      - documentIndex: 0
+        equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ate-system
+      - documentIndex: 1
+        equal:
+          path: kind
+          value: CiliumNetworkPolicy
+      - documentIndex: 1
+        equal:
+          path: spec.ingress[0].fromEndpoints[0].matchLabels
+          value:
+            app: atenet-egress
+            io.kubernetes.pod.namespace: ate-system
+      - documentIndex: 1
+        equal:
+          path: spec.egress[2]
+          value:
+            toFQDNs:
+              - matchName: oauth2.googleapis.com
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+      - documentIndex: 1
+        equal:
+          path: spec.egress[1].toEntities
+          value: [kube-apiserver]
+      - documentIndex: 1
+        lengthEqual:
+          path: spec.egress[0].toEndpoints
+          count: 3
+      - documentIndex: 1
+        equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*"
+
+  - it: takes a further token endpoint and another Substrate release
+    set:
+      substrate.releaseName: demo
+      networkPolicy.cilium.tokenHosts: [oauth2.googleapis.com, oauth2.example.test]
+    asserts:
+      - documentIndex: 1
+        equal:
+          path: spec.ingress[0].fromEndpoints[0].matchLabels.app
+          value: demo-atenet-egress
+      - documentIndex: 1
+        equal:
+          path: spec.egress[2].toFQDNs
+          value:
+            - matchName: oauth2.googleapis.com
+            - matchName: oauth2.example.test
+
+  - it: renders nothing with both policies off
+    set:
+      networkPolicy.enabled: false
+      networkPolicy.cilium.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

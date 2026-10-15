@@ -1,0 +1,48 @@
+{{ template "chart.header" . }}
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.homepageLine" . }}
+
+An [Agent Substrate](https://github.com/agent-substrate/substrate) credential
+provider plugin: a gRPC service the egress gateway calls to resolve
+`ate-secret://google-access-token.k8s.io/default/<namespace>/<secret>/<key>`
+to an OAuth 2.0 access token minted from the Google service account key the
+Secret entry holds. The key never leaves the cluster. See the
+[provider's README](../../google-access-token/README.md) for the URI grammar,
+the responses and the security model.
+
+## Wiring
+
+The chart installs beside Substrate, in its namespace, and the Substrate chart
+routes the class to it:
+
+```yaml
+credentialProvider:
+  additionalProviders:
+    - uriAuthority: google-access-token.k8s.io
+      host: google-access-token-credential-provider.ate-system.svc:50051
+```
+
+A Substrate release that still serves `google-access-token.k8s.io` from its
+bundled provider (the giantswarm/substrate line before 1.12.0) refuses that
+entry; deploy the chart first and add the routing with the Substrate release
+that dropped the bundled name.
+
+`namespacePolicies` takes the grants of the Substrate chart's
+`credentialProvider.namespacePolicies`: an actor's atespace may resolve keys
+only from the namespaces listed for it.
+
+The provider exchanges keys at `oauth2.googleapis.com`; the chart's
+CiliumNetworkPolicy opens that name on 443 beside DNS and the kube-apiserver.
+A cluster whose DNS pods carry other labels than the ones under
+`networkPolicy.cilium.dns` must set them.
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}

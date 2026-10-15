@@ -11,12 +11,12 @@
 # The generated app-platform file goes first so keys the chart defines itself
 # in values.yaml keep their own schema on merge.
 values:
-  - helm/substrate-credential-providers/zz_generated.app-platform.values.yaml
-  - helm/substrate-credential-providers/values.yaml
+  - helm/google-access-token-credential-provider/zz_generated.app-platform.values.yaml
+  - helm/google-access-token-credential-provider/values.yaml
 
 draft: 2020
 indent: 4
-output: helm/substrate-credential-providers/values.schema.json
+output: helm/google-access-token-credential-provider/values.schema.json
 
 # We enable bundling as the Kubernetes schema is large, and helm only permits 15 seconds to fetch them.
 # We have seen cases where helm timed out before fully fetching the schema.

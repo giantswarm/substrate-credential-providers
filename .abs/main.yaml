@@ -1,5 +1,5 @@
 replace-chart-version-with-git: true
+replace-app-version-with-git: true
 generate-metadata: true
-chart-dir: ./helm/substrate-credential-providers
+chart-dir: ./helm/google-access-token-credential-provider
 destination: ./build
-helm-template-extra-values: ./helm/substrate-credential-providers/ci/ci-values.yaml

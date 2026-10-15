@@ -1,0 +1,5 @@
+# Values app-test-suite installs the chart with on its kind cluster. The
+# smoke test is skipped (.ats/main.yaml): the pod needs Substrate's signers.
+namespacePolicies:
+  - atespace: kagent
+    allowedNamespaces: [kagent]

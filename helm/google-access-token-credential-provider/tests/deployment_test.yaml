@@ -1,0 +1,93 @@
+suite: deployment
+templates:
+  - deployment.yaml
+tests:
+  - it: serves mTLS from the two Substrate pod-certificate volumes and pins the egress gateway
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: gsoci.azurecr.io/giantswarm/substrate-credential-providers/google-access-token:0.1.0
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --injector-identity=spiffe://cluster.local/ns/ate-system/sa/atenet-egress
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --client-ca-file=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+      - equal:
+          path: spec.template.spec.volumes[1].projected.sources[0].podCertificate
+          value:
+            signerName: servicedns.podcert.ate.dev/identity
+            keyType: ECDSAP256
+            credentialBundlePath: credential-bundle.pem
+      - equal:
+          path: spec.template.spec.volumes[2].projected.sources[0].clusterTrustBundle
+          value:
+            signerName: podidentity.podcert.ate.dev/identity
+            labelSelector:
+              matchLabels:
+                podcert.ate.dev/canarying: live
+            path: trust-bundle.pem
+      - isNull:
+          path: spec.template.spec.containers[0].env
+
+  - it: prefixes the egress gateway's name with another Substrate release name
+    set:
+      substrate.releaseName: demo
+      substrate.namespace: platform
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --injector-identity=spiffe://cluster.local/ns/platform/sa/demo-atenet-egress
+
+  - it: pins the image by digest when the release stamped one and caps the certificate lifetime
+    set:
+      image.tag: 1.2.3
+      image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      podCertificates.maxExpirationSeconds: 7200
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: gsoci.azurecr.io/giantswarm/substrate-credential-providers/google-access-token:1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      - equal:
+          path: spec.template.spec.volumes[1].projected.sources[0].podCertificate.maxExpirationSeconds
+          value: 7200
+
+  - it: rolls the pod when the grants change
+    set:
+      namespacePolicies:
+        - atespace: kagent
+          allowedNamespaces: [kagent]
+    asserts:
+      - notEqual:
+          path: metadata.annotations["checksum/namespace-policy"]
+          value: null
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/namespace-policy"]
+          pattern: ^[0-9a-f]{64}$
+
+  - it: runs under the restricted pod security standard by default
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

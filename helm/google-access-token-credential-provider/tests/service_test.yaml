@@ -1,0 +1,19 @@
+suite: service
+templates:
+  - service.yaml
+tests:
+  - it: is the address the egress gateway dials
+    release:
+      name: google-access-token-credential-provider
+      namespace: ate-system
+    asserts:
+      - equal:
+          path: metadata.name
+          value: google-access-token-credential-provider
+      - equal:
+          path: spec.ports[0]
+          value:
+            name: grpc
+            port: 50051
+            targetPort: grpc
+            protocol: TCP

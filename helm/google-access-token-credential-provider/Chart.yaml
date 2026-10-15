@@ -1,0 +1,18 @@
+apiVersion: v2
+name: google-access-token-credential-provider
+description: Agent Substrate credential provider for the google-access-token.k8s.io class, minting Google access tokens for Vertex AI from service account keys held in Kubernetes Secrets
+type: application
+# version and appVersion are placeholders: app-build-suite rewrites both to the
+# git tag at chart-build time (.abs/main.yaml), and image.tag defaults to
+# appVersion, the tag the release pushed the image under.
+version: 0.1.0
+appVersion: 0.1.0
+icon: https://s.giantswarm.io/app-icons/giantswarm/1/light.svg
+home: https://github.com/giantswarm/substrate-credential-providers
+sources:
+  - https://github.com/giantswarm/substrate-credential-providers
+annotations:
+  io.giantswarm.application.team: bumblebee
+maintainers:
+  - name: Giant Swarm
+    url: https://www.giantswarm.io

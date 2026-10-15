@@ -1,0 +1,18 @@
+# Substrate issues the serving certificate for the Services that select the
+# pod; the egress gateway dials this name and pins it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labels.common" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "labels.selector" . | nindent 4 }}
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP

@@ -1,0 +1,96 @@
+{{- if .Values.networkPolicy.enabled }}
+# Only the egress gateway may reach the gRPC port; the provider also pins the
+# gateway's identity on every connection. The health port stays open for the
+# kubelet's probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labels.common" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "labels.selector" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.substrate.namespace }}
+          podSelector:
+            matchLabels:
+              app: {{ include "substrate.name" (list .Values.substrate.egressGateway .Values.substrate.releaseName) }}
+      ports:
+        - port: 50051
+          protocol: TCP
+    - ports:
+        - port: 9090
+          protocol: TCP
+{{- end }}
+{{- if .Values.networkPolicy.cilium.enabled }}
+---
+# The same ingress for Cilium, and the egress the provider needs: DNS, the
+# kube-apiserver for the Secret read, and Google's token endpoint for the
+# exchange. Nothing else leaves the pod. The DNS rule sends lookups through
+# Cilium's DNS proxy, without which the toFQDNs rule learns no addresses and
+# matches nothing.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labels.common" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "labels.selector" . | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: {{ include "substrate.name" (list .Values.substrate.egressGateway .Values.substrate.releaseName) }}
+            io.kubernetes.pod.namespace: {{ .Values.substrate.namespace }}
+      toPorts:
+        - ports:
+            - port: "50051"
+              protocol: TCP
+    - fromEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        {{- range .Values.networkPolicy.cilium.dns }}
+        - matchLabels:
+            io.kubernetes.pod.namespace: {{ .namespace }}
+            {{- toYaml .labels | nindent 12 }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "1053"
+              protocol: UDP
+            - port: "1053"
+              protocol: TCP
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+    - toFQDNs:
+        {{- range .Values.networkPolicy.cilium.tokenHosts }}
+        - matchName: {{ . | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+{{- end }}
