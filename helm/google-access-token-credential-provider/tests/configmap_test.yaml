@@ -22,3 +22,19 @@ tests:
           path: data["namespace-policy.yaml"]
           value: |
             policies: [{"allowedNamespaces":["kagent"],"atespace":"kagent","secretSelector":{"matchLabels":{"example.com/credential":"true"}}}]
+
+  - it: passes namespace selectors through
+    set:
+      namespacePolicies:
+        - ownNamespaceSelector:
+            matchExpressions:
+              - {key: giantswarm.io/organization, operator: Exists}
+        - atespace: ate-golden
+          allowedNamespaceSelector:
+            matchExpressions:
+              - {key: giantswarm.io/organization, operator: Exists}
+    asserts:
+      - equal:
+          path: data["namespace-policy.yaml"]
+          value: |
+            policies: [{"ownNamespaceSelector":{"matchExpressions":[{"key":"giantswarm.io/organization","operator":"Exists"}]}},{"allowedNamespaceSelector":{"matchExpressions":[{"key":"giantswarm.io/organization","operator":"Exists"}]},"atespace":"ate-golden"}]

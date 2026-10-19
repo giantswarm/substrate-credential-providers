@@ -87,9 +87,16 @@ key and the token are never logged.
   `--namespace-policy-file` policy does not list for it. The policy is
   default-deny and has the shape of the reference Kubernetes provider's
   `namespacePolicies`; a `secretSelector` narrows a grant to Secrets carrying
-  every listed label.
+  every listed label. A policy may select namespaces by label instead of
+  listing them: an `ownNamespaceSelector` lets each matched namespace be read
+  by the atespace of the same name only (never by `ate-golden`), and an
+  `allowedNamespaceSelector` beside `atespace` grants that atespace every
+  matched namespace. The provider then watches namespaces and matches their
+  labels at each request, so a namespace labeled or unlabeled after start is
+  granted or refused without a restart.
 - **The provider's own Kubernetes identity bounds the rest.** It holds `get`
-  on Secrets cluster-wide; the grants decide which of them an actor reaches.
+  on Secrets cluster-wide, and `list` and `watch` on namespaces only when a
+  policy selects them; the grants decide which Secrets an actor reaches.
 - **The exchange leaves the cluster.** The pod reaches Google's token endpoint
   on 443 and nothing else; the chart's CiliumNetworkPolicy says so.
 
@@ -102,10 +109,10 @@ key and the token are never logged.
 | `--server-cred-bundle` | required | the serving credential bundle (PKCS#8 key and chain), reloaded on rotation |
 | `--client-ca-file` | required | the trust bundle callers chain to, reloaded on rotation |
 | `--injector-identity` | required | the SPIFFE ID a caller must carry |
-| `--namespace-policy-file` | required | the grants YAML, read once at start |
+| `--namespace-policy-file` | required | the grants YAML, read once at start; namespace selectors follow labels without a restart |
 | `--exchange-timeout` | `15s` | one round trip to the token endpoint |
 | `--drain-grace` | `5s` | in-flight RPCs on shutdown before a hard stop |
-| `--kube-api-qps`, `--kube-api-burst` | `50`, `100` | the Secret reads |
+| `--kube-api-qps`, `--kube-api-burst` | `50`, `100` | the Secret reads and the namespace watch |
 
 ## Development
 
@@ -122,4 +129,11 @@ The policy file:
 policies:
   - atespace: kagent
     allowedNamespaces: [kagent]
+  - ownNamespaceSelector:
+      matchExpressions:
+        - {key: giantswarm.io/organization, operator: Exists}
+  - atespace: ate-golden
+    allowedNamespaceSelector:
+      matchExpressions:
+        - {key: giantswarm.io/organization, operator: Exists}
 ```

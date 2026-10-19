@@ -120,6 +120,9 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("kubernetes client: %w", err)
 	}
+	if err := authz.WatchNamespaces(ctx, client); err != nil {
+		return fmt.Errorf("namespace policy: %w", err)
+	}
 
 	srv := grpc.NewServer(grpc.Creds(creds))
 	credproviderpb.RegisterCredentialProviderServer(srv, provider.NewServer(client, authz, *exchangeTimeout))
@@ -163,7 +166,8 @@ func run(ctx context.Context) error {
 	return <-shutdownErr
 }
 
-// newKubeClient builds the in-cluster client the provider reads Secrets with.
+// newKubeClient builds the in-cluster client for the Secrets and, when a policy
+// selects namespaces, the namespace watch.
 func newKubeClient() (kubernetes.Interface, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {

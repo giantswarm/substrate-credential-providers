@@ -54,6 +54,20 @@ namespacePolicies: []
 #    secretSelector:
 #      matchLabels:
 #        example.com/credential: "true"
+# A policy with an ownNamespaceSelector (a Kubernetes label selector) in place
+# of atespace and allowedNamespaces lets each namespace it matches be read by
+# the atespace of the same name, and by no other; namespaces are matched by
+# their current labels, and the chart adds list/watch RBAC on namespaces for it.
+#  - ownNamespaceSelector:
+#      matchExpressions:
+#        - {key: example.com/tenant, operator: Exists}
+# An allowedNamespaceSelector beside atespace grants that atespace every
+# namespace it matches, an explicit opt-in (ownNamespaceSelector never grants
+# ate-golden); the chart adds the same RBAC for it.
+#  - atespace: ate-golden
+#    allowedNamespaceSelector:
+#      matchExpressions:
+#        - {key: example.com/tenant, operator: Exists}
 
 # How long one exchange of a service account key at Google's token endpoint may
 # take. The egress gateway waits on the fetch, so keep it short.
