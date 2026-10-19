@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `google-access-token`: the release logs `version` with the commit it was built from (`dev commit=<sha>`) instead of a bare `dev`. The image copies the binary CircleCI's go-build compiles from the git checkout, which records the commit, instead of compiling again without the repository's history; a pseudo-version is not reported as a release.
 - `google-access-token` image: the build stage cross-compiles from the builder's platform and the final stage runs nothing, so the arm64 image builds within the image job's time instead of compiling under emulation.
 
 [Unreleased]: https://github.com/giantswarm/substrate-credential-providers/tree/main

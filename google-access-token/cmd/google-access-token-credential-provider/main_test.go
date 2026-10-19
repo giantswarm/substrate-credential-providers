@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -129,6 +130,29 @@ func TestBuildVersionPrefersExplicitVersion(t *testing.T) {
 	version = ""
 	if got := buildVersion(); got == "" {
 		t.Error("buildVersion() is empty without an explicit version")
+	}
+}
+
+func TestFormatVersion(t *testing.T) {
+	rev := []debug.BuildSetting{{Key: "vcs.revision", Value: "4c269d0644769d5c0d9eb2df2089d9680df1dea0"}}
+	for _, tc := range []struct {
+		name, version string
+		info          *debug.BuildInfo
+		want          string
+	}{
+		{"no build info", "", nil, "dev"},
+		{"explicit version wins", "v0.2.0", &debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261019092712-4c269d064476"}, Settings: rev}, "v0.2.0 commit=4c269d0644769d5c0d9eb2df2089d9680df1dea0"},
+		{"pseudo-version is not a release", "", &debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261019092712-4c269d064476"}, Settings: rev}, "dev commit=4c269d0644769d5c0d9eb2df2089d9680df1dea0"},
+		{"dirty pseudo-version is not a release", "", &debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261019092712-4c269d064476+dirty"}}, "dev"},
+		{"module release version", "", &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0"}, Settings: rev}, "v0.2.0 commit=4c269d0644769d5c0d9eb2df2089d9680df1dea0"},
+		{"devel", "", &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, "dev"},
+		{"modified tree", "", &debug.BuildInfo{Settings: append(rev, debug.BuildSetting{Key: "vcs.modified", Value: "true"})}, "dev commit=4c269d0644769d5c0d9eb2df2089d9680df1dea0-dirty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatVersion(tc.version, tc.info); got != tc.want {
+				t.Errorf("formatVersion() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
