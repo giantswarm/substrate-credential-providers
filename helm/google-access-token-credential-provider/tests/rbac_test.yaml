@@ -1,0 +1,62 @@
+suite: rbac
+templates:
+  - rbac.yaml
+tests:
+  - it: reads Secrets only, without a namespace selector
+    set:
+      namespacePolicies:
+        - atespace: kagent
+          allowedNamespaces: [kagent]
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: ["secrets"]
+              verbs: ["get"]
+
+  - it: watches namespaces when a policy has an ownNamespaceSelector
+    set:
+      namespacePolicies:
+        - ownNamespaceSelector:
+            matchExpressions:
+              - {key: example.com/tenant, operator: Exists}
+    asserts:
+      - hasDocuments:
+          count: 4
+      - documentIndex: 2
+        equal:
+          path: metadata.name
+          value: google-access-token-credential-provider-namespace-reader
+      - documentIndex: 2
+        equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: ["namespaces"]
+              verbs: ["list", "watch"]
+      - documentIndex: 3
+        equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: google-access-token-credential-provider
+              namespace: NAMESPACE
+
+  - it: watches namespaces when a policy has an allowedNamespaceSelector
+    set:
+      namespacePolicies:
+        - atespace: ate-golden
+          allowedNamespaceSelector:
+            matchExpressions:
+              - {key: example.com/tenant, operator: Exists}
+    asserts:
+      - hasDocuments:
+          count: 4
+      - documentIndex: 3
+        equal:
+          path: roleRef.name
+          value: google-access-token-credential-provider-namespace-reader

@@ -15,10 +15,19 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"slices"
+	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 
 	"sigs.k8s.io/yaml"
 )
@@ -32,6 +41,19 @@ type namespacePolicyFile struct {
 type atespaceNamespacePolicy struct {
 	Atespace          string   `json:"atespace"`
 	AllowedNamespaces []string `json:"allowedNamespaces"`
+	// OwnNamespaceSelector, when set, takes the place of atespace and
+	// allowedNamespaces: every namespace whose labels it matches may be read
+	// by the atespace of the same name, and by no other. The namespaces are
+	// matched against their labels at the time of each request, so one that is
+	// created, labeled or unlabeled after startup is granted or refused
+	// without a restart. It must name at least one requirement.
+	OwnNamespaceSelector *metav1.LabelSelector `json:"ownNamespaceSelector,omitempty"`
+	// AllowedNamespaceSelector, when set, grants atespace every namespace whose
+	// labels it matches, beside those allowedNamespaces lists, matched the same
+	// way as ownNamespaceSelector. It is an explicit opt-in for an atespace
+	// that serves many namespaces' actors. It must name at least one
+	// requirement.
+	AllowedNamespaceSelector *metav1.LabelSelector `json:"allowedNamespaceSelector,omitempty"`
 	// SecretSelector, when set, narrows the grant to Secrets in every allowed
 	// namespace that carry all of its labels.
 	//
@@ -66,6 +88,13 @@ type grant struct {
 	labels map[string]string
 }
 
+// selectorGrant is the grant a namespace selector gives in each namespace it
+// matches.
+type selectorGrant struct {
+	selector labels.Selector
+	grant    grant
+}
+
 // NamespaceAuthorizer decides whether an atespace may resolve secrets in a given
 // Kubernetes namespace. It is default-deny: an atespace absent from the mapping
 // can resolve nothing.
@@ -75,6 +104,14 @@ type NamespaceAuthorizer struct {
 	// when any one of them admits it. Within a grant the criteria are AND-ed,
 	// so every label in one selector must be present.
 	allowed map[string]map[string][]grant
+	// ownNamespace holds the ownNamespaceSelector policies, OR-ed with allowed.
+	ownNamespace []selectorGrant
+	// selected maps atespace -> the allowedNamespaceSelector grants it holds,
+	// OR-ed with allowed.
+	selected map[string][]selectorGrant
+	// namespaces is the cache the selectors are matched against.
+	// WatchNamespaces sets it; until then those policies grant nothing.
+	namespaces corelisters.NamespaceLister
 }
 
 // LoadNamespaceAuthorizer reads the YAML policy file at path and builds an
@@ -93,35 +130,45 @@ func LoadNamespaceAuthorizer(path string) (*NamespaceAuthorizer, error) {
 }
 
 // newNamespaceAuthorizer builds an authorizer over a parsed policy file,
-// validating that each grant names an atespace.
+// validating that each grant names an atespace or selects namespaces.
 func newNamespaceAuthorizer(file namespacePolicyFile) (*NamespaceAuthorizer, error) {
 	allowed := make(map[string]map[string][]grant)
+	var ownNamespace []selectorGrant
+	selected := make(map[string][]selectorGrant)
 	for i, p := range file.Policies {
+		if p.OwnNamespaceSelector != nil {
+			if p.Atespace != "" || len(p.AllowedNamespaces) != 0 || p.AllowedNamespaceSelector != nil {
+				return nil, fmt.Errorf("namespace policy %d: ownNamespaceSelector cannot be combined with atespace, allowedNamespaces or allowedNamespaceSelector", i)
+			}
+			g, err := newGrant(i, p.SecretSelector)
+			if err != nil {
+				return nil, err
+			}
+			sg, err := newSelectorGrant(i, "ownNamespaceSelector", p.OwnNamespaceSelector, g)
+			if err != nil {
+				return nil, err
+			}
+			ownNamespace = append(ownNamespace, sg)
+			continue
+		}
 		if !dns1123Label.MatchString(p.Atespace) {
 			return nil, fmt.Errorf("namespace policy %d: valid atespace is required", i)
 		}
-		// A malformed label can never match, so it would narrow the grant to
-		// nothing and look like the policy was simply ignored. Fail loading
-		// instead.
-		for k, v := range p.SecretSelector.labels() {
-			if len(validation.IsQualifiedName(k)) != 0 {
-				return nil, fmt.Errorf("namespace policy %d: invalid label key %q", i, k)
+		g, err := newGrant(i, p.SecretSelector)
+		if err != nil {
+			return nil, err
+		}
+		if p.AllowedNamespaceSelector != nil {
+			sg, err := newSelectorGrant(i, "allowedNamespaceSelector", p.AllowedNamespaceSelector, g)
+			if err != nil {
+				return nil, err
 			}
-			if len(validation.IsValidLabelValue(v)) != 0 {
-				return nil, fmt.Errorf("namespace policy %d: invalid label value %q for key %q", i, v, k)
-			}
+			selected[p.Atespace] = append(selected[p.Atespace], sg)
 		}
 		set := allowed[p.Atespace]
 		if set == nil {
 			set = make(map[string][]grant)
 			allowed[p.Atespace] = set
-		}
-		// Each policy keeps its own grant. Merging them into one would AND the
-		// selectors of separate policies together, and would let a narrow policy
-		// take away the namespace a broad one granted.
-		g := grant{labels: map[string]string{}}
-		for k, v := range p.SecretSelector.labels() {
-			g.labels[k] = v
 		}
 		for _, ns := range p.AllowedNamespaces {
 			if len(validation.IsDNS1123Label(ns)) != 0 {
@@ -130,21 +177,116 @@ func newNamespaceAuthorizer(file namespacePolicyFile) (*NamespaceAuthorizer, err
 			set[ns] = append(set[ns], g)
 		}
 	}
-	return &NamespaceAuthorizer{allowed: allowed}, nil
+	return &NamespaceAuthorizer{allowed: allowed, ownNamespace: ownNamespace, selected: selected}, nil
+}
+
+// newSelectorGrant gives grant g of policy i in the namespaces its selector,
+// named field in its errors, matches.
+func newSelectorGrant(i int, field string, ls *metav1.LabelSelector, g grant) (selectorGrant, error) {
+	selector, err := metav1.LabelSelectorAsSelector(ls)
+	if err != nil {
+		return selectorGrant{}, fmt.Errorf("namespace policy %d: invalid %s: %w", i, field, err)
+	}
+	// An empty selector matches every namespace. Ask for that by label.
+	if selector.Empty() {
+		return selectorGrant{}, fmt.Errorf("namespace policy %d: %s must name at least one requirement", i, field)
+	}
+	return selectorGrant{selector: selector, grant: g}, nil
+}
+
+// newGrant builds the grant of policy i. Each policy keeps its own grant.
+// Merging them into one would AND the selectors of separate policies together,
+// and would let a narrow policy take away the namespace a broad one granted.
+func newGrant(i int, s *secretSelector) (grant, error) {
+	g := grant{labels: map[string]string{}}
+	for k, v := range s.labels() {
+		// A malformed label can never match, so it would narrow the grant to
+		// nothing and look like the policy was simply ignored. Fail loading
+		// instead.
+		if len(validation.IsQualifiedName(k)) != 0 {
+			return grant{}, fmt.Errorf("namespace policy %d: invalid label key %q", i, k)
+		}
+		if len(validation.IsValidLabelValue(v)) != 0 {
+			return grant{}, fmt.Errorf("namespace policy %d: invalid label value %q for key %q", i, v, k)
+		}
+		g.labels[k] = v
+	}
+	return g, nil
+}
+
+// goldenAtespace is the atespace Substrate reserves for the golden actor of
+// every template.
+const goldenAtespace = "ate-golden"
+
+// namespaceSyncTimeout bounds the first list of namespaces, so a provider that
+// cannot list them, for want of RBAC say, exits instead of never serving.
+const namespaceSyncTimeout = time.Minute
+
+// WatchNamespaces starts the namespace cache the namespace selectors are
+// matched against, for as long as ctx lives, and waits for its first list.
+// It does nothing when no policy selects namespaces, so a policy file without
+// one needs no access to namespaces.
+func (a *NamespaceAuthorizer) WatchNamespaces(ctx context.Context, client kubernetes.Interface) error {
+	if len(a.ownNamespace) == 0 && len(a.selected) == 0 {
+		return nil
+	}
+	factory := informers.NewSharedInformerFactory(client, 0)
+	namespaces := factory.Core().V1().Namespaces()
+	informer := namespaces.Informer()
+	factory.Start(ctx.Done())
+	syncCtx, cancel := context.WithTimeout(ctx, namespaceSyncTimeout)
+	defer cancel()
+	if !cache.WaitForCacheSync(syncCtx.Done(), informer.HasSynced) {
+		return fmt.Errorf("namespace cache did not sync within %s", namespaceSyncTimeout)
+	}
+	a.namespaces = namespaces.Lister()
+	return nil
+}
+
+// grantsFor returns the grants atespace holds in namespace: those the policy
+// lists, those of its allowedNamespaceSelector policies the namespace matches
+// now and, for the namespace of the atespace's own name, those of the
+// ownNamespaceSelector policies it matches now. The cache holds the labels of
+// its last watch event: while it cannot watch, a label change is not seen.
+func (a *NamespaceAuthorizer) grantsFor(atespace, namespace string) []grant {
+	if a == nil {
+		return nil
+	}
+	grants := slices.Clip(a.allowed[atespace][namespace])
+	grants = append(grants, a.matching(namespace, a.selected[atespace])...)
+	// The golden atespace hosts the golden actor of every template, so a
+	// namespace of its name is never granted to it by ownNamespaceSelector.
+	if atespace == namespace && atespace != goldenAtespace {
+		grants = append(grants, a.matching(namespace, a.ownNamespace)...)
+	}
+	return grants
+}
+
+// matching returns the grants of those selectors the namespace's labels match
+// now. A namespace the cache does not hold matches none.
+func (a *NamespaceAuthorizer) matching(namespace string, selectors []selectorGrant) []grant {
+	if a.namespaces == nil || len(selectors) == 0 {
+		return nil
+	}
+	ns, err := a.namespaces.Get(namespace)
+	if err != nil {
+		return nil
+	}
+	set := labels.Set(ns.GetLabels())
+	var grants []grant
+	for _, sg := range selectors {
+		if sg.selector.Matches(set) {
+			grants = append(grants, sg.grant)
+		}
+	}
+	return grants
 }
 
 // Allowed reports whether atespace may resolve secrets in namespace. Default
 // deny: an atespace absent from the mapping, or a namespace not in its list, is
 // refused.
 func (a *NamespaceAuthorizer) Allowed(atespace, namespace string) bool {
-	if a == nil {
-		return false
-	}
-	set, ok := a.allowed[atespace]
-	if !ok {
-		return false
-	}
-	return len(set[namespace]) > 0
+	return len(a.grantsFor(atespace, namespace)) > 0
 }
 
 // AllowedSecret reports whether atespace may resolve a Secret with these
@@ -152,7 +294,7 @@ func (a *NamespaceAuthorizer) Allowed(atespace, namespace string) bool {
 // including one that does not exist: pass nil labels to ask that question
 // before reading anything from Kubernetes.
 func (a *NamespaceAuthorizer) AllowedSecret(atespace, namespace string, labels map[string]string) bool {
-	for _, g := range a.allowed[atespace][namespace] {
+	for _, g := range a.grantsFor(atespace, namespace) {
 		if len(g.labels) == 0 {
 			return true
 		}
