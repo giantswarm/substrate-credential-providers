@@ -31,10 +31,12 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"golang.org/x/mod/module"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -214,16 +216,22 @@ func healthHandler(ready *atomic.Bool) http.Handler {
 // buildVersion returns the release or module version, else "dev", plus the VCS
 // revision when the build recorded one.
 func buildVersion() string {
-	v := version
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
+	info, _ := debug.ReadBuildInfo()
+	return formatVersion(version, info)
+}
+
+// formatVersion is buildVersion over an explicit build info. A pseudo-version
+// is not a release: the module sits in a subdirectory, so the toolchain maps
+// none of the repository's vX.Y.Z tags to it, and the revision names the build.
+func formatVersion(v string, info *debug.BuildInfo) string {
+	if info == nil {
 		if v == "" {
 			return "dev"
 		}
 		return v
 	}
-	if v == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		v = info.Main.Version
+	if mv := info.Main.Version; v == "" && mv != "" && mv != "(devel)" && !module.IsPseudoVersion(strings.TrimSuffix(mv, "+dirty")) {
+		v = mv
 	}
 	if v == "" {
 		v = "dev"

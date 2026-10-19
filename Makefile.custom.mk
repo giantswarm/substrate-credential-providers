@@ -21,8 +21,8 @@ lint-providers: ## golangci-lint and govulncheck in every provider module.
 	@for p in $(PROVIDERS); do (cd $$p && golangci-lint run ./... && go tool govulncheck ./...) || exit 1; done
 
 .PHONY: build-providers
-build-providers: ## Build every provider's image from the repository root.
-	@for p in $(PROVIDERS); do docker build -f $$p/Dockerfile --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t $$p-credential-provider:dev . || exit 1; done
+build-providers: ## Build every provider's image from the repository root, from the binary CI's go-build would attach.
+	@for p in $(PROVIDERS); do CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o $(APPLICATION)-linux-amd64 ./$$p/cmd/$$p-credential-provider && docker build -f $$p/Dockerfile --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t $$p-credential-provider:dev . || exit 1; done
 
 .PHONY: test-charts
 test-charts: ## helm unittest over every chart.

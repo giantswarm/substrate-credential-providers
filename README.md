@@ -33,6 +33,7 @@ helm unittest helm/google-access-token-credential-provider
 The image of a provider is built from the repository root with its Dockerfile:
 
 ```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o substrate-credential-providers-linux-amd64 ./google-access-token/cmd/google-access-token-credential-provider
 podman build -f google-access-token/Dockerfile --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t google-access-token-credential-provider:dev .
 ```
 
