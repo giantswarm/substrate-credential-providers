@@ -8,8 +8,8 @@ github.com/emicklei/go-restful/v3 v3.13.0 h1:C4Bl2xDndpU6nJ4bc1jXd+uTmYPVUwkD6bF
 github.com/emicklei/go-restful/v3 v3.13.0/go.mod h1:6n3XBCmQQb25CM2LCACGz8ukIrRry+4bhvbpWn3mrbc=
 github.com/fxamacker/cbor/v2 v2.9.1 h1:2rWm8B193Ll4VdjsJY28jxs70IdDsHRWgQYAI80+rMQ=
 github.com/fxamacker/cbor/v2 v2.9.1/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/giantswarm/substrate v1.12.0 h1:kMcpqH/MLMicVy4TE67u6SC+W9fYx2xzSMxBiGhzKQo=
-github.com/giantswarm/substrate v1.12.0/go.mod h1:iYgCwRK+Iq1KotssMRHGC1VNYohILLsDIlsOi/ARbdI=
+github.com/giantswarm/substrate v1.15.1 h1:PQ2wE4zR5LAIgZejo6lGaYhAfNXETgt1SUztM9hES5Y=
+github.com/giantswarm/substrate v1.15.1/go.mod h1:n1pQHR7r3sf5IbsHw7huN8u+PnqyULK3eJKAU01VzF8=
 github.com/go-logr/logr v1.4.4 h1:tG4xh9yMsRCAiodLVTxyrkzSZ9+o0L1Kg/+cPVcbP/8=
 github.com/go-logr/logr v1.4.4/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-openapi/jsonpointer v1.0.0 h1:kR9tHqY0CtZaOPVFm622dPVNhrvYpwr4uCxgL3h1H8s=
