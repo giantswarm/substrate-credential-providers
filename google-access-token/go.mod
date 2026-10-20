@@ -63,4 +63,4 @@ require (
 
 // The fork publishes upstream's module path; the version is the release the
 // platform's Substrate range admits (agent-platform components.substrate).
-replace github.com/agent-substrate/substrate => github.com/giantswarm/substrate v1.16.0
+replace github.com/agent-substrate/substrate => github.com/giantswarm/substrate v1.17.1
