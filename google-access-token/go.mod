@@ -1,6 +1,6 @@
 module github.com/giantswarm/substrate-credential-providers/google-access-token
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/agent-substrate/substrate v1.11.4
@@ -63,4 +63,4 @@ require (
 
 // The fork publishes upstream's module path; the version is the release the
 // platform's Substrate range admits (agent-platform components.substrate).
-replace github.com/agent-substrate/substrate => github.com/giantswarm/substrate v1.17.3
+replace github.com/agent-substrate/substrate => github.com/giantswarm/substrate v1.17.5
