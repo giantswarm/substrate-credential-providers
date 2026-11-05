@@ -70,6 +70,7 @@ A cluster whose DNS pods carry other labels than the ones under
 | substrate.namespace | string | `"ate-system"` |  |
 | substrate.trustDomain | string | `"cluster.local"` |  |
 | substrate.egressGateway | string | `"atenet-egress"` |  |
+| rbac.namespaces | list | `[]` |  |
 | namespacePolicies | list | `[]` |  |
 | exchangeTimeout | string | `"15s"` |  |
 | podCertificates.maxExpirationSeconds | string | `nil` |  |

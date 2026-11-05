@@ -60,3 +60,53 @@ tests:
         equal:
           path: roleRef.name
           value: google-access-token-credential-provider-namespace-reader
+
+  - it: binds the reader only in the listed namespaces
+    set:
+      rbac:
+        namespaces: [kagent, agents-acme-x1, kagent]
+    asserts:
+      - hasDocuments:
+          count: 3
+      - documentIndex: 0
+        equal:
+          path: kind
+          value: ClusterRole
+      - documentIndex: 1
+        equal:
+          path: kind
+          value: RoleBinding
+      - documentIndex: 1
+        equal:
+          path: metadata.namespace
+          value: kagent
+      - documentIndex: 2
+        equal:
+          path: metadata.namespace
+          value: agents-acme-x1
+      - documentIndex: 2
+        equal:
+          path: roleRef
+          value:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: google-access-token-credential-provider-secret-reader
+      - documentIndex: 2
+        equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: google-access-token-credential-provider
+              namespace: NAMESPACE
+
+  - it: binds the reader cluster-wide with an empty list
+    set:
+      rbac:
+        namespaces: []
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 1
+        equal:
+          path: kind
+          value: ClusterRoleBinding

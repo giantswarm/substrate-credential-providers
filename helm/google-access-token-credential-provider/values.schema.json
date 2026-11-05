@@ -218,6 +218,15 @@
         "provider": {
             "type": "string"
         },
+        "rbac": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "namespaces": {
+                    "type": "array"
+                }
+            }
+        },
         "replicaCount": {
             "type": "integer",
             "minimum": 0

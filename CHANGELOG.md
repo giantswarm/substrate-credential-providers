@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `google-access-token-credential-provider` chart: `rbac.namespaces`, following kagent's `rbac.namespaces`. Empty (the default), the provider's Secret reader ClusterRole stays bound cluster-wide; set, the chart binds it by RoleBinding in each listed namespace only, and a namespace added later needs its own RoleBinding to it.
 - `google-access-token`: a namespace policy can select namespaces by label, as Substrate's Kubernetes credential provider does since 1.12.0. `ownNamespaceSelector`, in place of `atespace` and `allowedNamespaces`, lets each matched namespace be read by the atespace of the same name only (never `ate-golden`); `allowedNamespaceSelector` beside `atespace` grants that atespace every matched namespace. The provider watches namespaces only when a policy selects them, and follows label changes without a restart.
 - `google-access-token-credential-provider` chart: a ClusterRole with `list` and `watch` on namespaces when a policy has either selector.
 
